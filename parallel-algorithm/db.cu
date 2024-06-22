@@ -166,7 +166,7 @@ int main() {
     if(DEBUG == 1) {
         count = 0;
         for (map<int, float**>::iterator it = clusters.begin(); it != clusters.end(); ++it) {
-            printMatrix(it->second, size_clusters[count], n_feat);
+            // printMatrix(it->second, size_clusters[count], n_feat);
             count++;
         }
     }
@@ -185,17 +185,28 @@ int main() {
 
         // copia matriz em memoria para a GPU
         float **h_cluster = clusters[i];
-        cuda_copy_matrix_host_to_device(d_cluster, h_cluster, size_current_cluster, n_feat);  
+        cuda_copy_matrix_host_to_device(d_cluster, h_cluster, size_current_cluster, n_feat);
     }
 
     if(DEBUG == 1) {
-        printf("Memoria alocada na GPU e dados copiados !!");
+        printf("Memoria alocada na GPU e dados copiados !!\n");
     }
+    
+/*
+    float *last_cluster = d_clusters[9];
+    int size_last_cluster = size_clusters[9];
+
+    dim3 threadsPerBlock(16, 16);
+    dim3 numBlocks((size_last_cluster + threadsPerBlock.x - 1) / threadsPerBlock.x,  (n_feat + threadsPerBlock.y - 1) / threadsPerBlock.y);
+
+    cuda_print_matrix<<<numBlocks,  threadsPerBlock>>>(last_cluster, size_last_cluster, n_feat);
+    cudaDeviceSynchronize();
+*/
 
     /*
         ==> STEP 3: Calcular o centroide
     */
-
+/*
     float *d_centroid_tmp;
     for (int i = 0; i < n_clusters; i++) {
         float *s_centroid; // [BLOCK_SIZE * n_feat];
@@ -209,7 +220,7 @@ int main() {
         cudaDeviceSynchronize();
 
     }
-
+*/
 
 
     // libera memoria
