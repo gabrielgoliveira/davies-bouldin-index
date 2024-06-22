@@ -14,10 +14,14 @@ char paths_datasets[][100] = {
     "../datasets/iris_k3_f4_150.dat"
 };
 
+int get_nblocks(int size_cluster) {
+    return (size_cluster + BLOCK_SIZE - 1) / BLOCK_SIZE;
+}
+
+
 char* get_path_dataset(int dataset_id) {
     return paths_datasets[dataset_id];
 }
-
 
 // Função para imprimir uma matriz
 void printMatrix(float **matrix, int n_rows, int n_columns) {
@@ -76,7 +80,9 @@ void cuda_copy_matrix_host_to_device(float* d_matrix, float** h_matrix, int n_ro
     return ;
 }
 
-__global__ void d_centroids(float *cluster, float *d_centroid_tmp, int size, int n_feat, float *s_centroid) {
+__global__ void d_reduce_points(float *d_cluster, float *d_centroid_tmp, int size, int n_feat) {
+    extern __shared__ float s_centroid[];
+
     int tid = threadIdx.x;
     int i = (blockIdx.x * blockDim.x) + tid;
 
@@ -86,10 +92,10 @@ __global__ void d_centroids(float *cluster, float *d_centroid_tmp, int size, int
 
     __syncthreads();
 
-    // Copy points from global memory to shared memory
     if (i < size) {
+        // copia a linha do cluster referente a thread para s_centroid
         for (int d = 0; d < n_feat; d++) {
-            s_centroid[tid * n_feat + d] = (float ) cluster[i*n_feat + d];
+            s_centroid[tid * n_feat + d] = (float ) d_cluster[i*n_feat + d];
         }
     }
     __syncthreads();
@@ -115,14 +121,21 @@ __global__ void d_centroids(float *cluster, float *d_centroid_tmp, int size, int
     return ;
 }
 
-
+void cuda_verifica_erros(cudaError_t error) {
+    if(error != cudaSuccess) { 
+        printf("CUDA error: %s\n", cudaGetErrorString(error)); 
+        exit(-1); 
+    }
+}
 
 int main() {
 
     int n_clusters, n_feat, count = 0;
-    vector<int> size_clusters;
+    vector<int>       size_clusters;
+    map<int, float*>  centroids;
     map<int, float**> clusters;
-    map<int, float*> d_clusters;
+    map<int, float*>  d_clusters;         // Enderecos dos clusters alocados na device (gpu)
+    map<int, float*>  d_partial_centroid; // DEVICE: centroides parciais obtidos por meio de redução
 
     clock_t start, stop;
     double running_time;
@@ -140,15 +153,17 @@ int main() {
     cout<<"Qtd. clusters: "<<n_clusters<<" Qtd. Features: "<<n_feat<<endl;
     cout<<"=============================================================\n";
 
-    // segunda linha do arquivo (lê o tamanho dos clusters)
+    
     for (int i = 0; i < n_clusters; i++) {
+        // segunda linha do arquivo (lê o tamanho dos clusters)
         int size_cluster = 0;
         dataset >> size_cluster;
         size_clusters.push_back(size_cluster);
     }
 
     
-    for (int i = 0; i < size_clusters.size(); i++) { // percorrer o arquivo em relação a cada cluster
+    for (int i = 0; i < size_clusters.size(); i++) {
+        // percorrer o arquivo em relação a cada cluster
         int size_current_cluster = size_clusters[i];
         float** current_cluster = malloc_matrix(size_current_cluster, n_feat);
            
@@ -172,16 +187,19 @@ int main() {
     }
     
     /*
-        ==> STEP 2: COPIAR DADOS PARA A MEMORIA DA GPU
+        ==> STEP 2: ALOCA MEMORIA NA GPU E COPIA DADOS PARA A MEMORIA DA GPU
     */
 
     for (int i = 0; i < n_clusters; i++) {
-        float* d_cluster;
+        float* d_cluster, *d_centroid_temp;
         int size_current_cluster = size_clusters[i];
+        int nblocks = get_nblocks(size_clusters[i]);
 
         // aloca memoria na gpu
         d_cluster = cuda_malloc_matrix(size_current_cluster, n_feat);
+        d_centroid_temp = cuda_malloc_matrix(nblocks*n_feat, n_feat);
         d_clusters.insert(pair<int, float*>(i, d_cluster));
+        d_partial_centroid.insert(pair<int, float*>(i, d_centroid_temp));
 
         // copia matriz em memoria para a GPU
         float **h_cluster = clusters[i];
@@ -191,7 +209,7 @@ int main() {
     if(DEBUG == 1) {
         printf("Memoria alocada na GPU e dados copiados !!\n");
     }
-    
+
 /*
     float *last_cluster = d_clusters[9];
     int size_last_cluster = size_clusters[9];
@@ -206,21 +224,32 @@ int main() {
     /*
         ==> STEP 3: Calcular o centroide
     */
-/*
+
     float *d_centroid_tmp;
     for (int i = 0; i < n_clusters; i++) {
         float *s_centroid; // [BLOCK_SIZE * n_feat];
-        int nblocks = (size_clusters[i] + BLOCK_SIZE - 1) / BLOCK_SIZE;
-        float *d_current_cluster = d_clusters[i];
         int cluster_size = size_clusters[i];
+        int nblocks = get_nblocks(cluster_size);
+        float *d_current_cluster = d_clusters[i];
+        float *h_reduce;
+        
+        d_centroid_tmp = d_partial_centroid[i];
+        d_reduce_points <<<nblocks, BLOCK_SIZE, BLOCK_SIZE*n_feat>>>(
+            d_current_cluster, // Ponteiro do cluster no device
+            d_centroid_tmp,    // reducao dos pontos em relacao aos blocos
+            cluster_size,      // tamanho do cluster
+            n_feat            // numero de features
+        );
 
-        // aloca memoria na gpu 
-        d_centroid_tmp = cuda_malloc_matrix(nblocks, n_feat);
-        d_centroids <<<nblocks, BLOCK_SIZE>>>(d_current_cluster, d_centroid_tmp, cluster_size, n_feat, s_centroid);
+        cudaError_t error = cudaGetLastError();
+        cuda_verifica_erros(error);
+        
+        cudaDeviceSynchronize();
+        cudaMemcpy(&h_reduce, d_centroid_tmp, nblocks*n_feat*sizeof(float), cudaMemcpyDeviceToHost);
         cudaDeviceSynchronize();
 
     }
-*/
+
 
 
     // libera memoria
