@@ -227,6 +227,7 @@ int main() {
 
     float *d_centroid_tmp;
     for (int i = 0; i < n_clusters; i++) {
+        cudaDeviceSynchronize();
         int cluster_size = size_clusters[i];
         int nblocks = get_nblocks(cluster_size);
         float *d_current_cluster = d_clusters[i];
@@ -247,17 +248,26 @@ int main() {
         cudaMemcpy(h_reduce, d_centroid_tmp, nblocks*n_feat*sizeof(float), cudaMemcpyDeviceToHost);
         cudaDeviceSynchronize();
 
+        float *centroid_current_cluster = (float*) malloc(sizeof(float)*n_feat);
+
         for (int i = 0; i < n_feat; i++) {
             float sum = 0.0;
             for (int j = 0; j < nblocks; j++) {
                 int current_index = j * n_feat + i;
                 sum += h_reduce[current_index];
             }
-
-            printf("%f ", sum);
+            centroid_current_cluster[i] = sum/cluster_size;
+            // printf("%f ", sum);
         }
 
-        return 0;
+        if(DEBUG == 1) {
+            cout << "\n ===> Centroid do cluster " << i << " : ";
+
+            for (int j = 0; j < n_feat; j++) {
+                cout << centroid_current_cluster[j] << " ";
+            }
+            cout << endl;
+        }
 
     }
 
