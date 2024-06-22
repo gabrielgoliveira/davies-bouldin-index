@@ -6,6 +6,7 @@
 #define DEBUG 1
 #define BLOCK_SIZE 128
 #define BASE_PATH "/home/gabriel/Desktop/ufg/tcc/dunn-index/"
+#define NF 64
 
 using namespace std;
 
@@ -81,7 +82,8 @@ void cuda_copy_matrix_host_to_device(float* d_matrix, float** h_matrix, int n_ro
 }
 
 __global__ void d_reduce_points(float *d_cluster, float *d_centroid_tmp, int size, int n_feat) {
-    extern __shared__ float s_centroid[];
+    //extern __shared__ float s_centroid[];
+     __shared__ float s_centroid[BLOCK_SIZE * NF];
 
     int tid = threadIdx.x;
     int i = (blockIdx.x * blockDim.x) + tid;
@@ -193,13 +195,11 @@ int main() {
     for (int i = 0; i < n_clusters; i++) {
         float* d_cluster, *d_centroid_temp;
         int size_current_cluster = size_clusters[i];
-        int nblocks = get_nblocks(size_clusters[i]);
 
         // aloca memoria na gpu
         d_cluster = cuda_malloc_matrix(size_current_cluster, n_feat);
-        d_centroid_temp = cuda_malloc_matrix(nblocks*n_feat, n_feat);
         d_clusters.insert(pair<int, float*>(i, d_cluster));
-        d_partial_centroid.insert(pair<int, float*>(i, d_centroid_temp));
+ 
 
         // copia matriz em memoria para a GPU
         float **h_cluster = clusters[i];
@@ -227,14 +227,13 @@ int main() {
 
     float *d_centroid_tmp;
     for (int i = 0; i < n_clusters; i++) {
-        float *s_centroid; // [BLOCK_SIZE * n_feat];
         int cluster_size = size_clusters[i];
         int nblocks = get_nblocks(cluster_size);
         float *d_current_cluster = d_clusters[i];
-        float *h_reduce;
+        float *h_reduce = (float*) malloc(sizeof(float)*nblocks*n_feat);
         
-        d_centroid_tmp = d_partial_centroid[i];
-        d_reduce_points <<<nblocks, BLOCK_SIZE, BLOCK_SIZE*n_feat>>>(
+        d_centroid_tmp = cuda_malloc_matrix(nblocks, n_feat);
+        d_reduce_points <<<nblocks, BLOCK_SIZE>>>(
             d_current_cluster, // Ponteiro do cluster no device
             d_centroid_tmp,    // reducao dos pontos em relacao aos blocos
             cluster_size,      // tamanho do cluster
@@ -245,8 +244,20 @@ int main() {
         cuda_verifica_erros(error);
         
         cudaDeviceSynchronize();
-        cudaMemcpy(&h_reduce, d_centroid_tmp, nblocks*n_feat*sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_reduce, d_centroid_tmp, nblocks*n_feat*sizeof(float), cudaMemcpyDeviceToHost);
         cudaDeviceSynchronize();
+
+        for (int i = 0; i < n_feat; i++) {
+            float sum = 0.0;
+            for (int j = 0; j < nblocks; j++) {
+                int current_index = j * n_feat + i;
+                sum += h_reduce[current_index];
+            }
+
+            printf("%f ", sum);
+        }
+
+        return 0;
 
     }
 
