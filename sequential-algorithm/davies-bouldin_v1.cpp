@@ -2,6 +2,7 @@
 #include <vector>
 #include <map>
 #include <fstream>
+#include <cmath>
 
 #define DEBUG 1
 #define BLOCK_SIZE 128
@@ -78,10 +79,34 @@ float* get_centroid(float **cluster, int size_cluster, int n_feat) {
 
 }
 
+float calc_distance(float *p1, float *p2, int dim) {
+    float sum = 0.0;
+    for (int i = 0; i < dim; i++) {
+        float x = p1[i];
+        float y = p2[i];
+        sum += (x-y)*(x-y);
+    }
+
+    return sqrt(sum);
+}
+
+float get_spread(float **cluster, float *centroid, int size_cluster, int n_feat) {
+    float sum = 0.0;
+    for (int i = 0; i < size_cluster; i++) {
+        float *p1 = cluster[i];
+        float distance = calc_distance(p1, centroid, n_feat);
+
+        sum += distance;        
+    }
+
+    return sum/size_cluster;
+}
+
 int main() {
 
     int n_clusters, n_feat, count = 0;
     vector<int>       size_clusters;
+    vector<float>     spreads;
     map<int, float*>  centroids;
     map<int, float**> clusters;
 
@@ -155,6 +180,29 @@ int main() {
             cout << endl;
         }
     }
+
+    /*
+        ==> STEP 4: Calcular spread
+    */
+
+    for (int i = 0; i < n_clusters; i++) {
+        float **current_cluster = clusters[i];
+        int size = size_clusters[i];
+        float *centroid = centroids[i];
+        float spread = get_spread(current_cluster, centroid, size, n_feat);
+        spreads.push_back(spread);
+    }
+
+    for (int i = 0; i < spreads.size(); i++) {
+        cout << "Spread do cluster " <<i<< " = "<<spreads[i]<<endl;
+    }
+
+    /* 
+        ==> Step 5: Calculo do DB
+    */
+
+   
+
 
    
 

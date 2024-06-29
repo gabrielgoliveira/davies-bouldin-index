@@ -2,6 +2,7 @@
 #include <vector>
 #include <map>
 #include <fstream>
+#include <cmath>
 
 #define DEBUG 1
 #define BLOCK_SIZE 128
@@ -81,6 +82,11 @@ void cuda_copy_matrix_host_to_device(float* d_matrix, float** h_matrix, int n_ro
     return ;
 }
 
+void cuda_copy_vector_host_to_device(float* d_matrix, float* h_vector, int size) {
+    cudaMemcpy(d_matrix, h_vector, size * sizeof(float), cudaMemcpyHostToDevice);
+    return ;
+}
+
 __global__ void d_reduce_points(float *d_cluster, float *d_centroid_tmp, int size, int n_feat) {
     //extern __shared__ float s_centroid[];
      __shared__ float s_centroid[BLOCK_SIZE * NF];
@@ -123,6 +129,90 @@ __global__ void d_reduce_points(float *d_cluster, float *d_centroid_tmp, int siz
     return ;
 }
 
+__global__ void ___d_reduce_spread(float *d_cluster, float *d_centroid, float *d_reducers, int size, int n_feat, int n_blocks, int index) {
+    int tid = threadIdx.x;
+    int idx = (blockIdx.x * blockDim.x) + tid;
+    __shared__ float s_reduce_spread;
+    s_reduce_spread = 0.0;
+    d_reducers[blockIdx.x] = 0.0;
+  
+    __syncthreads();
+    
+    if(idx < size) {
+        float sum = 0.0;
+        for (int d = 0; d < n_feat; d++) {
+            float x = d_cluster[idx*n_feat + d];
+            float y = d_centroid[d];
+            sum += (x-y)*(x-y);
+        }
+
+        s_reduce_spread += sqrt(sum);
+
+        if (blockIdx.x == 0) {
+            printf("Distancia tid %d =  %f : total -> %f \n", tid, sqrt(sum), s_reduce_spread); 
+        }
+
+        __syncthreads();
+
+        if (tid == 0) {
+            // cout << " " << s_reduce_spread << endl;
+            d_reducers[blockIdx.x] = s_reduce_spread;
+        }
+
+        return ;
+    }
+
+    return ;
+    
+}
+
+
+__global__ void d_reduce_spread(float *d_cluster, float *d_centroid, float *d_reducers, int size, int n_feat, int n_blocks, int index) {
+    extern __shared__ float s_reduce_spread[];
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+
+    // Inicializa a memória compartilhada
+    s_reduce_spread[tid] = 0.0;
+
+    __syncthreads();
+
+    // Calcula a distância se o índice for válido
+    if (idx < size) {
+        float sum = 0.0;
+        for (int d = 0; d < n_feat; d++) {
+            float x = d_cluster[idx * n_feat + d];
+            float y = d_centroid[d];
+            sum += (x - y) * (x - y);
+        }
+        s_reduce_spread[tid] = sqrt(sum);
+    }
+
+    __syncthreads();
+
+    // Redução paralela na memória compartilhada
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            s_reduce_spread[tid] += s_reduce_spread[tid + s];
+        }
+        __syncthreads();
+    }
+
+    // O primeiro thread escreve o resultado final para a memória global
+    if (tid == 0) {
+        d_reducers[blockIdx.x] = s_reduce_spread[0];
+    }
+}
+
+__global__ void cuda_print_vector(float* d_matrix, int n_columns) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx < n_columns) {
+        printf("matrix[%d] = %f\n", idx,  d_matrix[idx]);
+    }
+}
+
+
 void cuda_verifica_erros(cudaError_t error) {
     if(error != cudaSuccess) { 
         printf("CUDA error: %s\n", cudaGetErrorString(error)); 
@@ -134,6 +224,7 @@ int main() {
 
     int n_clusters, n_feat, count = 0;
     vector<int>       size_clusters;
+    vector<float>     spreads;
     map<int, float*>  centroids;
     map<int, float**> clusters;
     map<int, float*>  d_clusters;         // Enderecos dos clusters alocados na device (gpu)
@@ -250,15 +341,17 @@ int main() {
 
         float *centroid_current_cluster = (float*) malloc(sizeof(float)*n_feat);
 
-        for (int i = 0; i < n_feat; i++) {
+        for (int i_f = 0; i_f < n_feat; i_f++) {
             float sum = 0.0;
             for (int j = 0; j < nblocks; j++) {
-                int current_index = j * n_feat + i;
+                int current_index = j * n_feat + i_f;
                 sum += h_reduce[current_index];
             }
-            centroid_current_cluster[i] = sum/cluster_size;
+            centroid_current_cluster[i_f] = sum/cluster_size;
             // printf("%f ", sum);
         }
+
+        centroids.insert(pair<int, float*>(i, centroid_current_cluster));
 
         if(DEBUG == 1) {
             cout << "\n ===> Centroid do cluster " << i << " : ";
@@ -270,6 +363,64 @@ int main() {
         }
 
     }
+
+    /*
+        ==> STEP 4: Calcular o spread
+
+        Agora para cada cluster vamos ter um numero chamado de spread
+
+        1. colocar os centroids na gpu
+        2. 
+    */
+
+    cudaDeviceSynchronize();
+    for (int i = 0; i < n_clusters; i++) {        
+        int cluster_size = size_clusters[i];
+        int nblocks = get_nblocks(cluster_size);
+        float *centroid = centroids[i];
+        float *d_current_cluster = d_clusters[i];
+
+        float *h_reduce = (float*) malloc(sizeof(float)*nblocks);
+        float *d_reduce = cuda_malloc_matrix(1, nblocks);
+        float *d_centroid = cuda_malloc_matrix(1, n_feat);
+        cuda_copy_vector_host_to_device(d_centroid, centroid, n_feat); 
+
+
+        // cuda_print_vector<<<1, n_feat>>>(d_centroid, n_feat);
+
+        d_reduce_spread <<<nblocks, BLOCK_SIZE>>> (
+            d_current_cluster,
+            d_centroid,
+            d_reduce, 
+            cluster_size,
+            n_feat,
+            nblocks,
+            i
+        ); 
+
+        cudaError_t error = cudaGetLastError();
+        cuda_verifica_erros(error);
+
+        cudaDeviceSynchronize();
+        cudaMemcpy(h_reduce, d_reduce, nblocks*sizeof(float), cudaMemcpyDeviceToHost);
+        cudaDeviceSynchronize();
+
+        float sum = 0.0;
+        for (int b = 0; b < nblocks; b++) {
+            float dist = h_reduce[b];
+            sum += dist;
+        }
+
+        float spread = sum/cluster_size;
+
+        spreads.push_back(spread);
+
+    }
+
+    for (int i = 0; i < spreads.size(); i++) {
+        cout << "Spread do cluster " <<i<< " = "<<spreads[i]<<endl;
+    }
+
 
 
 
