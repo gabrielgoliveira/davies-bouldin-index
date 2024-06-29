@@ -201,7 +201,29 @@ int main() {
         ==> Step 5: Calculo do DB
     */
 
-   
+
+    vector<float> DB_ij;
+    float db_index = 0.0;
+
+    for (int i = 0; i < n_clusters; i++) {
+        float spread_i = spreads[i];
+        float *centroid_i = centroids[i];
+        float max_dbij = 0.0;
+
+        for (int j = 0; j < n_clusters; j++) {
+            if(i == j) continue;
+            float spread_j = spreads[j];
+            float *centroid_j = centroids[j];
+            float dist_centroids = calc_distance(centroid_i, centroid_j, n_feat);
+            float db = (spread_i + spread_j)/dist_centroids;
+            if (db > max_dbij) max_dbij = db;
+        }
+        db_index += max_dbij;
+    }
+    db_index = db_index/n_clusters;
+
+    cout << "DB INDEX : " << db_index << endl;
+
 
 
    

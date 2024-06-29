@@ -7,7 +7,7 @@ int get_cluster_atual(int, int, int *, int *);
 double get_distancia_pontos(double *, double *, int);
 
 int main() {
-  char *path = "../datasets/digits_k10_f64_1797.dat";
+  const char *path = "../datasets/digits_k10_f64_1797.dat";
   int n_clusters, n_features, dataset_len = 0;
   int *n_size_clusters, *index_inicio_cluster;
   double **dataset;
@@ -97,10 +97,10 @@ double get_distancia_pontos(double *p1, double *p2, int n_features) {
 
 double davies_bouldin_score(double **dataset, int *arr_cluster_size, int *arr_index_start_cluster, int n_clusters, int n_features, int dataset_len) {
   int label;
-  double *s = calloc(n_clusters, sizeof(double));
+  double *s = (double*) calloc(n_clusters, sizeof(double));
   double **arr_centroid = (double **) malloc(n_clusters*sizeof(double*));
   for (int i = 0; i < n_clusters; i++) {
-    arr_centroid[i] = calloc(n_features, sizeof(double)); // aloca e inicializa com 0
+    arr_centroid[i] = (double*) calloc(n_features, sizeof(double)); // aloca e inicializa com 0
   }
   
   // ================= Calculando o centroide ==========================
@@ -143,7 +143,7 @@ double davies_bouldin_score(double **dataset, int *arr_cluster_size, int *arr_in
 
   double **matriz_db = (double**) malloc(sizeof(double)*n_clusters);
   for (int i = 0; i < n_clusters; i++) {
-    matriz_db[i] = calloc(n_clusters, sizeof(double));
+    matriz_db[i] = (double*) calloc(n_clusters, sizeof(double));
   }
 
   // calculando db_{ij}
