@@ -327,6 +327,9 @@ int main() {
         ==> STEP 3: Calcular o centroide
     */
 
+    // start clock to measure running time
+    start = clock();
+
     float *d_centroid_tmp;
     for (int i = 0; i < n_clusters; i++) {
         cudaDeviceSynchronize();
@@ -432,7 +435,7 @@ int main() {
         cout << "Spread do cluster " <<i<< " = "<<spreads[i]<<endl;
     }
 
-        vector<float> DB_ij;
+    vector<float> DB_ij; 
     float db_index = 0.0;
 
     for (int i = 0; i < n_clusters; i++) {
@@ -455,6 +458,9 @@ int main() {
     cout << "DB INDEX : " << db_index << endl;
 
 
+    stop = clock();
+    running_time = (double)(stop - start) / CLOCKS_PER_SEC;
+    printf("\nTime taken: %lf milissegundos\n", 1000.0*running_time);
 
 
     // libera memoria
