@@ -4,8 +4,8 @@
 #include <fstream>
 #include <cmath>
 
-#define DEBUG 1
-#define BLOCK_SIZE 128
+#define DEBUG 0
+#define BLOCK_SIZE 64
 #define BASE_PATH "/home/gabriel/Desktop/ufg/tcc/dunn-index/"
 #define MAXDATASET_SIZE 2000 
 #define NF 64
@@ -57,12 +57,34 @@ void free_matrix(float** matrix, int n_rows, int n_columns) {
     free(matrix);
 }
 
+float calc_distance(float *p1, float *p2, int dim) {
+    float sum = 0.0;
+    for (int i = 0; i < dim; i++) {
+        float x = p1[i];
+        float y = p2[i];
+        sum += (x-y)*(x-y);
+    }
+
+    return sqrt(sum);
+}
+
 
 void cuda_verifica_erros(cudaError_t error) {
     if(error != cudaSuccess) { 
         printf("CUDA error: %s\n", cudaGetErrorString(error)); 
         exit(-1); 
     }
+}
+
+void cuda_copy_vector_host_to_device(float* d_matrix, float* h_vector, int size) {
+    cudaMemcpy(d_matrix, h_vector, size * sizeof(float), cudaMemcpyHostToDevice);
+    return ;
+}
+
+float* cuda_malloc_matrix(int n_rows, int n_columns) {
+    float* d_matrix;
+    cudaMalloc(&d_matrix, n_rows * n_columns * sizeof(float));
+    return d_matrix;
 }
 
 /*
@@ -112,17 +134,54 @@ __global__ void reduce_points(float *d_cluster, float *d_centroid_tmp, int size,
 }
 
 
+__global__ void d_reduce_spread(float *d_cluster, float *d_centroid, float *d_reducers, int size, int n_feat, int n_blocks, int index) {
+    extern __shared__ float s_reduce_spread[];
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+
+    // Inicializa a memória compartilhada
+    s_reduce_spread[tid] = 0.0;
+
+    __syncthreads();
+
+    // Calcula a distância se o índice for válido
+    if (idx < size) {
+        float sum = 0.0;
+        for (int d = 0; d < n_feat; d++) {
+            float x = d_cluster[idx * n_feat + d];
+            float y = d_centroid[d];
+            sum += (x - y) * (x - y);
+        }
+        s_reduce_spread[tid] = sqrt(sum);
+    }
+
+    __syncthreads();
+
+    // Redução paralela na memória compartilhada
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            s_reduce_spread[tid] += s_reduce_spread[tid + s];
+        }
+        __syncthreads();
+    }
+
+    // O primeiro thread escreve o resultado final para a memória global
+    if (tid == 0) {
+        d_reducers[blockIdx.x] = s_reduce_spread[0];
+    }
+}
+
 __global__ void print_row(float *d_cluster, int row, int n_feat) {
     int base = row * n_feat;
     for ( int i = 0; i < n_feat; i++ ) {
         printf("%f ", d_cluster[base]);
         base++;
     }
-    // __syncthreads();
     printf("\n");
     return ;
 
 }
+
 int main () {
     int n_clusters, n_feat, count = 0;
     int*       size_clusters;
@@ -170,8 +229,6 @@ int main () {
         float temp;
 
         start_clusters[i] = start_cluster;
-        cout << "Linha onde o cluster se inicia : " << start_clusters[i] << endl;
-
         for (int j = 0; j < size_current_cluster; j++) { 
             for(int k = 0; k < n_feat; k++) { 
                 fscanf(fp, "%f", &temp);
@@ -180,21 +237,6 @@ int main () {
         }
 
         start_cluster +=size_clusters[i];
-    }
-
-    if (DEBUG == 1) {
-        for (int i = 0; i < n_clusters; i++) {
-            int base = start_clusters[i];
-            int size = size_clusters[i];
-            //cout<<"==================== CLUSTER "<<i<<" =============================="<<endl;
-            for (int j = 0; j < size; j++) {
-                for (int k = 0; k < n_feat; k++) {
-                    //cout<<dataset[base + j][k]<<" ";
-                }
-                //cout<<endl;
-
-            }
-        }
     }
 
     // ALOCA MEMORIA NA DRAM
@@ -212,22 +254,9 @@ int main () {
     /*
         ==> STEP 3: Calcular o centroide
     */
-
-    for (int i = 0; i < n_clusters; i++) {
-        int base = start_clusters[i];
-        for (int j = 0; j < size_clusters[i]; j++) {
-    
-
-            int linha = base + j;
-            print_row<<<1, 1>>>(d_dataset, linha, n_feat);
-            cudaDeviceSynchronize();
-
-        }
-    }
-
+   start = clock();
    float *d_centroid_tmp;
    for (int i = 0; i < n_clusters; i++) {
-    cudaDeviceSynchronize();
     int cluster_size = size_clusters[i];
     int base = start_clusters[i] * n_feat;
     int nblocks = get_nblocks(cluster_size);
@@ -265,15 +294,91 @@ int main () {
 
     centroids.insert(pair<int, float*>(i, centroid_current_cluster));
 
-    if(DEBUG == 1) {
-        cout << "\n ===> Centroid do cluster " << i << " : ";
+    // if(DEBUG == 1) {
+        //cout << "\n ===> Centroid do cluster " << i << " : ";
 
-        for (int j = 0; j < n_feat; j++) {
-            cout << centroid_current_cluster[j] << " ";
-        }
-        cout << endl;
-    }
+        //for (int j = 0; j < n_feat; j++) {
+            //cout << centroid_current_cluster[j] << " ";
+        //}
+        //cout << endl;
+    //}
    }
+
+    for (int i = 0; i < n_clusters; i++) {        
+        int cluster_size = size_clusters[i];
+        int base = start_clusters[i] * n_feat;
+        int nblocks = get_nblocks(cluster_size);
+
+        float *centroid = centroids[i];
+        float *d_current_cluster = &d_dataset[base];
+
+        float *h_reduce = (float*) malloc(sizeof(float)*nblocks);
+        float *d_reduce = cuda_malloc_matrix(1, nblocks);
+        float *d_centroid = cuda_malloc_matrix(1, n_feat);
+        cuda_copy_vector_host_to_device(d_centroid, centroid, n_feat); 
+
+
+        // cuda_print_vector<<<1, n_feat>>>(d_centroid, n_feat);
+
+        d_reduce_spread <<<nblocks, BLOCK_SIZE>>> (
+            d_current_cluster,
+            d_centroid,
+            d_reduce, 
+            cluster_size,
+            n_feat,
+            nblocks,
+            i
+        ); 
+
+        cudaError_t error = cudaGetLastError();
+        cuda_verifica_erros(error);
+
+        cudaDeviceSynchronize();
+        cudaMemcpy(h_reduce, d_reduce, nblocks*sizeof(float), cudaMemcpyDeviceToHost);
+        cudaDeviceSynchronize();
+
+        float sum = 0.0;
+        for (int b = 0; b < nblocks; b++) {
+            float dist = h_reduce[b];
+            sum += dist;
+        }
+
+        float spread = sum/cluster_size;
+
+        spreads.push_back(spread);
+
+    }
+
+    //for (int i = 0; i < spreads.size(); i++) {
+        //cout << "Spread do cluster " <<i<< " = "<<spreads[i]<<endl;
+    //}
+
+       vector<float> DB_ij; 
+    float db_index = 0.0;
+
+    for (int i = 0; i < n_clusters; i++) {
+        float spread_i = spreads[i];
+        float *centroid_i = centroids[i];
+        float max_dbij = 0.0;
+
+        for (int j = 0; j < n_clusters; j++) {
+            if(i == j) continue;
+            float spread_j = spreads[j];
+            float *centroid_j = centroids[j];
+            float dist_centroids = calc_distance(centroid_i, centroid_j, n_feat);
+            float db = (spread_i + spread_j)/dist_centroids;
+            if (db > max_dbij) max_dbij = db;
+        }
+        db_index += max_dbij;
+    }
+    db_index = db_index/n_clusters;
+
+    cout << "DB INDEX : " << db_index << endl;
+
+
+    stop = clock();
+    running_time = (double)(stop - start) / CLOCKS_PER_SEC;
+    printf("\nTime taken: %lf milissegundos\n", 1000.0*running_time);
 
     return 0;
 }
