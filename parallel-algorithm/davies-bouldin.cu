@@ -134,7 +134,7 @@ __global__ void reduce_points(float *d_cluster, float *d_centroid_tmp, int size,
 }
 
 
-__global__ void d_reduce_spread(float *d_cluster, float *d_centroid, float *d_reducers, int size, int n_feat, int n_blocks, int index) {
+__global__ void reduce_spread(float *d_cluster, float *d_centroid, float *d_reducers, int size, int n_feat, int n_blocks, int index) {
     extern __shared__ float s_reduce_spread[];
     int tid = threadIdx.x;
     int idx = blockIdx.x * blockDim.x + tid;
@@ -186,6 +186,7 @@ int main () {
     int n_clusters, n_feat, count = 0;
     int*       size_clusters;
     int*       start_clusters;
+    int        max_cluster_size = 0;
 
     vector<float>     spreads;
     map<int, float*>  centroids;
@@ -194,7 +195,8 @@ int main () {
 
     float*  d_start_clusters;         // Enderecos dos clusters alocados na device (gpu)
     float*  d_dataset;                // DEVICE: centroides parciais obtidos por meio de redução
-
+    float*  d_reduce;
+    float*  d_centroid_tmp;
     clock_t start, stop;
     double running_time;
 
@@ -210,11 +212,13 @@ int main () {
     int tam_dataset = 0;
     size_clusters   = (int*) malloc(sizeof(int) * n_clusters);
     start_clusters  = (int*) malloc(sizeof(int) * n_clusters);
+
     for (int i = 0; i < n_clusters; i++) {
         // segunda linha do arquivo (lê o tamanho dos clusters)
         int size_cluster = 0;
         fscanf(fp, "%d", &size_cluster);
         size_clusters[i] = size_cluster;
+        if(size_cluster > max_cluster_size) max_cluster_size = size_cluster;
         tam_dataset += size_cluster;
     }
 
@@ -224,6 +228,7 @@ int main () {
 
     // percorrer o arquivo em relação a cada cluster
     int start_cluster = 0;
+    const int MAX_BLOCKS = get_nblocks(max_cluster_size);
     for (int i = 0; i < n_clusters; i++) {
         int size_current_cluster = size_clusters[i];
         float temp;
@@ -239,13 +244,17 @@ int main () {
         start_cluster +=size_clusters[i];
     }
 
+    // ALOCA MEMORIA RAM
+    float *h_reduce = (float*) malloc(sizeof(float) * MAX_BLOCKS*n_feat);
+
     // ALOCA MEMORIA NA DRAM
-    cudaMalloc(&d_start_clusters, n_clusters*sizeof(int));
-    cudaMalloc(&d_dataset, MAXDATASET_SIZE*NF*sizeof(float));
+    cudaMalloc(&d_dataset,  MAXDATASET_SIZE*NF*sizeof(float));
+    cudaMalloc(&d_reduce,   MAX_BLOCKS*sizeof(float));
+    cudaMalloc(&d_centroid_tmp,   MAX_BLOCKS*NF*sizeof(float));
+    
 
     // COPIA DADOS PARA A DRAM
     cudaMemcpy(d_dataset, dataset, MAXDATASET_SIZE*n_feat*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_start_clusters, start_clusters, n_clusters*sizeof(int), cudaMemcpyHostToDevice);
 
     cudaDeviceSynchronize();
 
@@ -254,17 +263,15 @@ int main () {
     /*
         ==> STEP 3: Calcular o centroide
     */
+
    start = clock();
-   float *d_centroid_tmp;
+
    for (int i = 0; i < n_clusters; i++) {
     int cluster_size = size_clusters[i];
     int base = start_clusters[i] * n_feat;
     int nblocks = get_nblocks(cluster_size);
     float *d_current_cluster = &d_dataset[base];
-    float *h_reduce = (float*) malloc(sizeof(float) * nblocks*n_feat);
-
-    cudaMalloc(&d_centroid_tmp, nblocks*n_feat*sizeof(float));
-
+    
     reduce_points <<<nblocks, BLOCK_SIZE>>>(
         d_current_cluster, // Ponteiro do cluster no device
         d_centroid_tmp,    // reducao dos pontos em relacao aos blocos
@@ -278,7 +285,7 @@ int main () {
 
     cudaDeviceSynchronize();
     cudaMemcpy(h_reduce, d_centroid_tmp, nblocks*n_feat*sizeof(float), cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
 
     float *centroid_current_cluster = (float*) malloc(sizeof(float)*n_feat);
 
@@ -294,14 +301,6 @@ int main () {
 
     centroids.insert(pair<int, float*>(i, centroid_current_cluster));
 
-    // if(DEBUG == 1) {
-        //cout << "\n ===> Centroid do cluster " << i << " : ";
-
-        //for (int j = 0; j < n_feat; j++) {
-            //cout << centroid_current_cluster[j] << " ";
-        //}
-        //cout << endl;
-    //}
    }
 
     for (int i = 0; i < n_clusters; i++) {        
@@ -313,14 +312,10 @@ int main () {
         float *d_current_cluster = &d_dataset[base];
 
         float *h_reduce = (float*) malloc(sizeof(float)*nblocks);
-        float *d_reduce = cuda_malloc_matrix(1, nblocks);
         float *d_centroid = cuda_malloc_matrix(1, n_feat);
         cuda_copy_vector_host_to_device(d_centroid, centroid, n_feat); 
 
-
-        // cuda_print_vector<<<1, n_feat>>>(d_centroid, n_feat);
-
-        d_reduce_spread <<<nblocks, BLOCK_SIZE>>> (
+        reduce_spread <<<nblocks, BLOCK_SIZE>>> (
             d_current_cluster,
             d_centroid,
             d_reduce, 
@@ -349,9 +344,6 @@ int main () {
 
     }
 
-    //for (int i = 0; i < spreads.size(); i++) {
-        //cout << "Spread do cluster " <<i<< " = "<<spreads[i]<<endl;
-    //}
 
        vector<float> DB_ij; 
     float db_index = 0.0;
