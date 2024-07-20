@@ -5,15 +5,29 @@
 #include <cmath>
 
 #define DEBUG 0
+#define DEBUG_DEEP 0
 #define BLOCK_SIZE 128
-#define BASE_PATH "/home/gabriel/Desktop/ufg/tcc/dunn-index/"
-#define NF 64
+#define NF 15
+
+
+/*
+
+==> Algoritmo Paralelo 1
+
+    Esse algoritmo não faz o uso de alocação de memoria sequencial,
+ou seja, para cada matriz recebida ele aloca linha a linha da matriz.
+
+*/
+
 
 using namespace std;
 
 char paths_datasets[][100] = {
     "../datasets/digits_k10_f64_1797.dat", 
-    "../datasets/iris_k3_f4_150.dat"
+    "../datasets/iris_k3_f4_150.dat",
+    "../datasets/electricity_k2_f8_45311.dat",
+    "../datasets/random_k3_f15_100000.txt",
+    "../datasets/random_k3_f15_900000.txt",
 };
 
 int get_nblocks(int size_cluster) {
@@ -244,7 +258,7 @@ int main() {
     clock_t start, stop;
     double running_time;
 
-    char *path_dataset = get_path_dataset(0);
+    char *path_dataset = get_path_dataset(4);
     ifstream dataset(path_dataset);
 
     /*
@@ -252,18 +266,18 @@ int main() {
     */
     
     dataset >> n_clusters >> n_feat; // primeira linha do arquivo
-
-    cout<<"================= INFOS DATASET LIDO ========================\n";
-    cout<<"Qtd. clusters: "<<n_clusters<<" Qtd. Features: "<<n_feat<<endl;
-    cout<<"=============================================================\n";
-
-    
+    int size_dataset = 0;
     for (int i = 0; i < n_clusters; i++) {
         // segunda linha do arquivo (lê o tamanho dos clusters)
         int size_cluster = 0;
         dataset >> size_cluster;
         size_clusters.push_back(size_cluster);
+        size_dataset += size_cluster;
     }
+
+    cout<<"================= INFOS DATASET LIDO ========================\n";
+    cout<<"Qtd. clusters: "<<n_clusters<<" Qtd. Features: "<<n_feat << " Qtd. pontos Dataset: "<< size_dataset <<endl;
+    cout<<"=============================================================\n";
 
     
     for (int i = 0; i < size_clusters.size(); i++) {
@@ -282,7 +296,7 @@ int main() {
         clusters.insert(pair<int, float**>(i, current_cluster));
     }
 
-    if(DEBUG == 1) {
+    if(DEBUG == 1 && DEBUG_DEEP == 1) {
         count = 0;
         for (map<int, float**>::iterator it = clusters.begin(); it != clusters.end(); ++it) {
             cout<<"==================== CLUSTER "<<count<<" =============================="<<endl;
@@ -312,17 +326,6 @@ int main() {
     if(DEBUG == 1) {
         printf("Memoria alocada na GPU e dados copiados !!\n");
     }
-
-/*
-    float *last_cluster = d_clusters[9];
-    int size_last_cluster = size_clusters[9];
-
-    dim3 threadsPerBlock(16, 16);
-    dim3 numBlocks((size_last_cluster + threadsPerBlock.x - 1) / threadsPerBlock.x,  (n_feat + threadsPerBlock.y - 1) / threadsPerBlock.y);
-
-    cuda_print_matrix<<<numBlocks,  threadsPerBlock>>>(last_cluster, size_last_cluster, n_feat);
-    cudaDeviceSynchronize();
-*/
 
     /*
         ==> STEP 3: Calcular o centroide
@@ -363,7 +366,6 @@ int main() {
                 sum += h_reduce[current_index];
             }
             centroid_current_cluster[i_f] = sum/cluster_size;
-            // printf("%f ", sum);
         }
 
         centroids.insert(pair<int, float*>(i, centroid_current_cluster));
@@ -381,11 +383,6 @@ int main() {
 
     /*
         ==> STEP 4: Calcular o spread
-
-        Agora para cada cluster vamos ter um numero chamado de spread
-
-        1. colocar os centroids na gpu
-        2. 
     */
 
     cudaDeviceSynchronize();
@@ -432,9 +429,12 @@ int main() {
 
     }
 
-    for (int i = 0; i < spreads.size(); i++) {
-        cout << "Spread do cluster " <<i<< " = "<<spreads[i]<<endl;
+    if (DEBUG == 1) {
+        for (int i = 0; i < spreads.size(); i++) {
+            cout << "Spread do cluster " <<i<< " = "<<spreads[i]<<endl;
+        }
     }
+
 
     vector<float> DB_ij; 
     float db_index = 0.0;
