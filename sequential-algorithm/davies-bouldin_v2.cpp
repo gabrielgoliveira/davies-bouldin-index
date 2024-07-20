@@ -14,10 +14,8 @@ memoria usando ponteiros e o malloc.
 
 */
 
-#define DEBUG 1
-#define BLOCK_SIZE 128
+#define DEBUG 0
 #define BASE_PATH "/home/gabriel/Desktop/ufg/tcc/dunn-index/"
-#define NF 8
 
 using namespace std;
 
@@ -28,10 +26,6 @@ char paths_datasets[][100] = {
     "../datasets/random_k3_f15_100000.txt",
     "../datasets/random_k3_f15_900000.txt",
 };
-
-int get_nblocks(int size_cluster) {
-    return (size_cluster + BLOCK_SIZE - 1) / BLOCK_SIZE;
-}
 
 
 char* get_path_dataset(int dataset_id) {
@@ -126,7 +120,7 @@ int main() {
     clock_t start, stop;
     double running_time;
 
-    char *path_dataset = get_path_dataset(2);
+    char *path_dataset = get_path_dataset(4);
     ifstream dataset(path_dataset);
 
     /*
@@ -134,18 +128,18 @@ int main() {
     */
     
     dataset >> n_clusters >> n_feat; // primeira linha do arquivo
-
-    cout<<"================= INFOS DATASET LIDO ========================\n";
-    cout<<"Qtd. clusters: "<<n_clusters<<" Qtd. Features: "<<n_feat<<endl;
-    cout<<"=============================================================\n";
-
-    
+    int dataset_size = 0;
     for (int i = 0; i < n_clusters; i++) {
         // segunda linha do arquivo (lê o tamanho dos clusters)
         int size_cluster = 0;
         dataset >> size_cluster;
         size_clusters.push_back(size_cluster);
+        dataset_size += size_cluster;
     }
+
+    cout<<"================= INFOS DATASET LIDO ========================\n";
+    cout<<"Qtd. clusters: "<<n_clusters<<" Qtd. Features: "<<n_feat << " Qtd pontos dataset: "<<dataset_size<<endl;
+    cout<<"=============================================================\n";
 
     
     for (int i = 0; i < size_clusters.size(); i++) {
@@ -209,8 +203,10 @@ int main() {
         spreads.push_back(spread);
     }
 
-    for (int i = 0; i < spreads.size(); i++) {
-        cout << "Spread do cluster " <<i<< " = "<<spreads[i]<<endl;
+    if(DEBUG == 1) {
+        for (int i = 0; i < spreads.size(); i++) {
+            cout << "Spread do cluster " <<i<< " = "<<spreads[i]<<endl;
+        }
     }
 
     /* 
