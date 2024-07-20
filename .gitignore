@@ -1,0 +1,8 @@
+.vscode/
+db
+parallel-algorithm/db
+sequential-algorithm/db
+parallel-algorithm/db_v1
+sequential-algorithm/db_v1
+parallel-algorithm/db_v2
+sequential-algorithm/db_v2
