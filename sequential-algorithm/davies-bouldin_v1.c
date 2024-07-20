@@ -2,6 +2,17 @@
 #include <stdlib.h>
 #include <math.h>
 
+/*
+
+==> Algoritmo Sequencia 1 :
+
+  O objetivo deste algoritmo é minimizar o uso de memoria para fazer o calculo do indice,
+para tal, ele faz várias chamadas de leitura de arquivo, de forma que ele nunca aloca o dataset
+inteiro em memoria.
+
+*/
+
+
 double davies_bouldin_score(double **, int *, int *, int , int, int);
 int get_cluster_atual(int, int, int *, int *);
 double get_distancia_pontos(double *, double *, int);

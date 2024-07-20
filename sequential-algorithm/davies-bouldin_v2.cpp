@@ -4,10 +4,20 @@
 #include <fstream>
 #include <cmath>
 
+/*
+
+==> Algoritmo Sequencia 2 :
+
+  O objetivo deste algoritmo é eficiencia, portanto ele aloca o dataset inteiramente em memoria,
+porém ele não aloca memoria de forma contigua, ou seja, cada dataset é alocado de forma dinamica em
+memoria usando ponteiros e o malloc.
+
+*/
+
 #define DEBUG 1
 #define BLOCK_SIZE 128
 #define BASE_PATH "/home/gabriel/Desktop/ufg/tcc/dunn-index/"
-#define NF 15
+#define NF 8
 
 using namespace std;
 
@@ -15,7 +25,8 @@ char paths_datasets[][100] = {
     "../datasets/digits_k10_f64_1797.dat", 
     "../datasets/iris_k3_f4_150.dat",
     "../datasets/electricity_k2_f8_45311.dat",
-    "/home/gabriel/Desktop/cluster_output (2).txt"
+    "../datasets/random_k3_f15_100000.txt",
+    "../datasets/random_k3_f15_900000.txt",
 };
 
 int get_nblocks(int size_cluster) {
@@ -115,7 +126,7 @@ int main() {
     clock_t start, stop;
     double running_time;
 
-    char *path_dataset = get_path_dataset(3);
+    char *path_dataset = get_path_dataset(2);
     ifstream dataset(path_dataset);
 
     /*
