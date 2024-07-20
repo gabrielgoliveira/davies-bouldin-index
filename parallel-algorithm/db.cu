@@ -4,7 +4,7 @@
 #include <fstream>
 #include <cmath>
 
-#define DEBUG 1
+#define DEBUG 0
 #define BLOCK_SIZE 128
 #define BASE_PATH "/home/gabriel/Desktop/ufg/tcc/dunn-index/"
 #define NF 64
@@ -285,7 +285,8 @@ int main() {
     if(DEBUG == 1) {
         count = 0;
         for (map<int, float**>::iterator it = clusters.begin(); it != clusters.end(); ++it) {
-            // printMatrix(it->second, size_clusters[count], n_feat);
+            cout<<"==================== CLUSTER "<<count<<" =============================="<<endl;
+            printMatrix(it->second, size_clusters[count], n_feat);
             count++;
         }
     }

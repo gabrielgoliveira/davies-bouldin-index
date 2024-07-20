@@ -15,7 +15,8 @@ using namespace std;
 char paths_datasets[][100] = {
     "../datasets/digits_k10_f64_1797.dat", 
     "../datasets/iris_k3_f4_150.dat",
-    "../datasets/electricity_k2_f8_45311.dat"
+    "../datasets/electricity_k2_f8_45311.dat",
+    "../datasets/teste_centroid.dat"
 };
 
 int get_nblocks(int size_cluster) {
@@ -315,74 +316,6 @@ int main () {
 
    }
 
-    for (int i = 0; i < n_clusters; i++) {        
-        int cluster_size = size_clusters[i];
-        int base = start_clusters[i] * n_feat;
-        int nblocks = get_nblocks(cluster_size);
-
-        float *centroid = centroids[i];
-        float *d_current_cluster = &d_dataset[base];
-
-        float *h_reduce = (float*) malloc(sizeof(float)*nblocks);
-        float *d_centroid = cuda_malloc_matrix(1, n_feat);
-        cuda_copy_vector_host_to_device(d_centroid, centroid, n_feat); 
-
-        reduce_spread <<<nblocks, BLOCK_SIZE>>> (
-            d_current_cluster,
-            d_centroid,
-            d_reduce, 
-            cluster_size,
-            n_feat,
-            nblocks,
-            i
-        ); 
-
-        cudaError_t error = cudaGetLastError();
-        cuda_verifica_erros(error);
-
-        cudaDeviceSynchronize();
-        cudaMemcpy(h_reduce, d_reduce, nblocks*sizeof(float), cudaMemcpyDeviceToHost);
-        cudaDeviceSynchronize();
-
-        float sum = 0.0;
-        for (int b = 0; b < nblocks; b++) {
-            float dist = h_reduce[b];
-            sum += dist;
-        }
-
-        float spread = sum/cluster_size;
-
-        spreads.push_back(spread);
-
-    }
-
-
-       vector<float> DB_ij; 
-    float db_index = 0.0;
-
-    for (int i = 0; i < n_clusters; i++) {
-        float spread_i = spreads[i];
-        float *centroid_i = centroids[i];
-        float max_dbij = 0.0;
-
-        for (int j = 0; j < n_clusters; j++) {
-            if(i == j) continue;
-            float spread_j = spreads[j];
-            float *centroid_j = centroids[j];
-            float dist_centroids = calc_distance(centroid_i, centroid_j, n_feat);
-            float db = (spread_i + spread_j)/dist_centroids;
-            if (db > max_dbij) max_dbij = db;
-        }
-        db_index += max_dbij;
-    }
-    db_index = db_index/n_clusters;
-
-    cout << "DB INDEX : " << db_index << endl;
-
-
-    stop = clock();
-    running_time = (double)(stop - start) / CLOCKS_PER_SEC;
-    printf("\nTime taken: %lf milissegundos\n", 1000.0*running_time);
 
     return 0;
 }

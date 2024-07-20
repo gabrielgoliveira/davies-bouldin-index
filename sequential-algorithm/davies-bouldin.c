@@ -7,7 +7,7 @@ int get_cluster_atual(int, int, int *, int *);
 double get_distancia_pontos(double *, double *, int);
 
 int main() {
-  const char *path = "../datasets/digits_k10_f64_1797.dat";
+  const char *path = "../datasets/electricity_k2_f8_45311.dat";
   int n_clusters, n_features, dataset_len = 0;
   int *n_size_clusters, *index_inicio_cluster;
   double **dataset;

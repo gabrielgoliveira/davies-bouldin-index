@@ -7,13 +7,15 @@
 #define DEBUG 1
 #define BLOCK_SIZE 128
 #define BASE_PATH "/home/gabriel/Desktop/ufg/tcc/dunn-index/"
-#define NF 64
+#define NF 8
 
 using namespace std;
 
 char paths_datasets[][100] = {
     "../datasets/digits_k10_f64_1797.dat", 
-    "../datasets/iris_k3_f4_150.dat"
+    "../datasets/iris_k3_f4_150.dat",
+    "../datasets/electricity_k2_f8_45311.dat",
+    "/home/gabriel/Desktop/cluster_output (1).txt"
 };
 
 int get_nblocks(int size_cluster) {
@@ -113,7 +115,7 @@ int main() {
     clock_t start, stop;
     double running_time;
 
-    char *path_dataset = get_path_dataset(0);
+    char *path_dataset = get_path_dataset(3);
     ifstream dataset(path_dataset);
 
     /*
@@ -158,6 +160,9 @@ int main() {
             count++;
         }
     }
+
+    // start clock to measure running time
+    start = clock();
 
 
     /*
@@ -225,7 +230,9 @@ int main() {
     cout << "DB INDEX : " << db_index << endl;
 
 
-
+    stop = clock();
+    running_time = (double)(stop - start) / CLOCKS_PER_SEC;
+    printf("\nTime taken: %lf milissegundos\n", 1000.0*running_time);
    
 
     // libera memoria

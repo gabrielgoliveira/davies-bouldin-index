@@ -4,17 +4,19 @@
 #include <fstream>
 #include <cmath>
 
-#define DEBUG 0
-#define BLOCK_SIZE 64
+#define DEBUG 1
+#define BLOCK_SIZE 256
 #define BASE_PATH "/home/gabriel/Desktop/ufg/tcc/dunn-index/"
-#define MAXDATASET_SIZE 2000 
-#define NF 64
+#define MAXDATASET_SIZE 300 
+#define NF 2
 
 using namespace std;
 
 char paths_datasets[][100] = {
     "../datasets/digits_k10_f64_1797.dat", 
-    "../datasets/iris_k3_f4_150.dat"
+    "../datasets/iris_k3_f4_150.dat",
+    "../datasets/electricity_k2_f8_45311.dat",
+    "/home/gabriel/Desktop/cluster_output (1).txt"
 };
 
 int get_nblocks(int size_cluster) {
@@ -101,6 +103,8 @@ __global__ void reduce_points(float *d_cluster, float *d_centroid_tmp, int size,
     for (int d = 0; d < n_feat; d++) {
         s_centroid[tid * n_feat + d] = 0.0;
     }
+
+    if(i > size) return ;
 
     __syncthreads();
 
@@ -204,7 +208,7 @@ int main () {
         ==> STEP 1: LER O ARQUIVO
     */
 
-    char *path_dataset = get_path_dataset(0);
+    char *path_dataset = get_path_dataset(3);
     FILE *fp = fopen(path_dataset, "r");
     // lendo a qtd de clusters e qtd de features
     fscanf(fp, "%d %d", &n_clusters, &n_feat);
@@ -300,6 +304,15 @@ int main () {
     }
 
     centroids.insert(pair<int, float*>(i, centroid_current_cluster));
+
+    if(DEBUG == 1) {
+        cout << "\n ===> Centroid do cluster " << i << " : ";
+
+        for (int j = 0; j < n_feat; j++) {
+            cout << centroid_current_cluster[j] << " ";
+        }
+        cout << endl;
+    }
 
    }
 
