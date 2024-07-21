@@ -7,17 +7,20 @@
 #define DEBUG 1
 #define BLOCK_SIZE 256
 #define BASE_PATH "/home/gabriel/Desktop/ufg/tcc/dunn-index/"
-#define MAXDATASET_SIZE 900000 
-#define NF 15
+#define MAXDATASET_SIZE 5000 
+#define NF 20
 
 using namespace std;
 
 char paths_datasets[][100] = {
-    "../datasets/digits_k10_f64_1797.dat", 
-    "../datasets/iris_k3_f4_150.dat",
-    "../datasets/electricity_k2_f8_45311.dat",
-    "../datasets/random_k3_f15_100000.txt",
-    "../datasets/random_k3_f15_900000.txt",
+    "../datasets/digits_k10_f64_1797.dat",              // 0
+    "../datasets/iris_k3_f4_150.dat",                   // 1
+    "../datasets/electricity_k2_f8_45311.dat",          // 2
+    "../datasets/random_k3_f15_100000.txt",             // 3
+    "../datasets/random_k3_f15_900000.txt",             // 4
+    "../datasets/random_k3_f20_5000.dat",               // 5
+    "../datasets/random_k5_f20_5000.dat",               // 6
+    "../datasets/random_k7_f20_5000.dat",               // 7
 };
 
 int get_nblocks(int size_cluster) {
@@ -209,7 +212,7 @@ int main () {
         ==> STEP 1: LER O ARQUIVO
     */
 
-    char *path_dataset = get_path_dataset(4);
+    char *path_dataset = get_path_dataset(7);
     FILE *fp = fopen(path_dataset, "r");
     // lendo a qtd de clusters e qtd de features
     fscanf(fp, "%d %d", &n_clusters, &n_feat);
