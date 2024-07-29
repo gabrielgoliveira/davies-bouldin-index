@@ -1,4 +1,4 @@
-# dunn-index
+# Davies Bouldin Index
 
 ### Executando o projeto :
 
